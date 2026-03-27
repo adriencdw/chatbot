@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.*
+!.env.example
+data
+.git
+.gitignore
+.claude
+*.log
+*.md
+scripts
+modal_app.py
