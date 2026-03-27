@@ -76,5 +76,6 @@ def serve():
         **os.environ,
         "PORT": "3001",
         "DATA_DIR": "/app/data",   # points tokenStore to the persistent volume
+        "TZ": "Europe/Brussels",   # fix: Date.getHours()/setHours() use Brussels time
     }
     subprocess.Popen(["node", "/app/server.js"], env=env, cwd="/app")
