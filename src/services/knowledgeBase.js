@@ -4,14 +4,15 @@
  * No embeddings API needed. Add/remove PDFs without code changes.
  */
 
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const _pdfMod = require("pdf-parse");
-const pdfParse = typeof _pdfMod === "function" ? _pdfMod : (_pdfMod.default ?? _pdfMod);
-import { readFileSync, readdirSync } from "fs";
+import { execSync } from "child_process";
+import { readdirSync } from "fs";
 import { join, basename, extname } from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+
+function parsePDF(filePath) {
+  return execSync(`pdftotext "${filePath}" -`, { encoding: "utf8" });
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PDF_DIR = join(__dirname, "../../pdfs");
@@ -24,11 +25,9 @@ let cachedIDF = null; // pre-computed once after loadKnowledgeBase(), never stal
 export async function loadKnowledgeBase() {
   const files = readdirSync(PDF_DIR).filter((f) => extname(f) === ".pdf");
 
-  const loaded = await Promise.all(
-    files.map(async (file) => {
+  const loaded = files.map((file) => {
       try {
-        const buffer = readFileSync(join(PDF_DIR, file));
-        const parsed = await pdfParse(buffer);
+        const text = parsePDF(join(PDF_DIR, file));
         const title = basename(file, ".pdf")
           .replace(/-/g, " ")
           .replace(/\b\w/g, (c) => c.toUpperCase());
@@ -36,15 +35,14 @@ export async function loadKnowledgeBase() {
           id: basename(file, ".pdf"),
           title,
           pdfUrl: `/pdfs/${file}`,
-          content: parsed.text.trim(),
-          tokens: tokenize(parsed.text),
+          content: text.trim(),
+          tokens: tokenize(text),
         };
       } catch (err) {
         console.warn(`Could not parse ${file}:`, err.message);
         return null;
       }
-    })
-  );
+  });
 
   docs = loaded.filter(Boolean);
   cachedIDF = computeIDF(docs); // compute once — docs never change after startup
