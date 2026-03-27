@@ -6,7 +6,8 @@
 
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse");
+const _pdfMod = require("pdf-parse");
+const pdfParse = typeof _pdfMod === "function" ? _pdfMod : (_pdfMod.default ?? _pdfMod);
 import { readFileSync, readdirSync } from "fs";
 import { join, basename, extname } from "path";
 import { fileURLToPath } from "url";

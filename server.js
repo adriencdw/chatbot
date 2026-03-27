@@ -13,6 +13,7 @@ await loadKnowledgeBase();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.set("trust proxy", 1); // Modal runs behind a reverse proxy
 
 const allowedOrigins = [
   process.env.FRONTEND_ORIGIN || "https://build-ai.be",
