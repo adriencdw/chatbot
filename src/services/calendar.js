@@ -36,6 +36,11 @@ export async function queryFreebusy({ dateDebut, dateFin }) {
   const end = new Date(dateFin);
   const now = new Date();
 
+  console.log("[queryFreebusy] input:", { dateDebut, dateFin });
+  console.log("[queryFreebusy] parsed start (Brussels):", start.toLocaleString("fr-BE", { timeZone: "Europe/Brussels" }));
+  console.log("[queryFreebusy] parsed end   (Brussels):", end.toLocaleString("fr-BE", { timeZone: "Europe/Brussels" }));
+  console.log("[queryFreebusy] querying UTC range:", start.toISOString(), "→", end.toISOString());
+
   const freeBusyRes = await calendar.freebusy.query({
     requestBody: {
       timeMin: start.toISOString(),
@@ -50,6 +55,9 @@ export async function queryFreebusy({ dateDebut, dateFin }) {
 
   const calMain = freeBusyRes.data.calendars[process.env.CALENDAR_ID_MAIN];
   const calSec  = freeBusyRes.data.calendars[process.env.CALENDAR_ID_SECONDARY];
+
+  console.log("[queryFreebusy] raw busy MAIN:", JSON.stringify(calMain?.busy));
+  console.log("[queryFreebusy] raw busy SEC: ", JSON.stringify(calSec?.busy));
 
   const rawBusy = [
     ...(calMain?.busy || []),
@@ -106,6 +114,12 @@ export async function queryFreebusy({ dateDebut, dateFin }) {
     debut: formatLabel(b.start),
     fin:   formatLabel(b.end),
   }));
+
+  console.log("[queryFreebusy] merged busy:", JSON.stringify(busyMerged.map(b => ({
+    start: b.start.toLocaleString("fr-BE", { timeZone: "Europe/Brussels" }),
+    end:   b.end.toLocaleString("fr-BE",   { timeZone: "Europe/Brussels" }),
+  }))));
+  console.log("[queryFreebusy] free slots found:", slots.map(s => s.label));
 
   return { slots, plages_occupees };
 }

@@ -118,6 +118,7 @@ export async function chat(history, userMessage) {
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
 
+        console.log("[agent] tool call:", block.name, JSON.stringify(block.input));
         let result;
         let isError = false;
         try {
