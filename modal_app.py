@@ -41,9 +41,12 @@ data_volume = modal.Volume.from_name("chatbot-data", create_if_missing=True)
 image = (
     modal.Image.debian_slim()           # Modal-managed base with Python — required
     .apt_install(                        # Node 20 LTS + build tools for native addons
-        "curl", "gnupg", "make", "g++",
+        "curl", "gnupg", "make", "g++", "tzdata",
     )
     .run_commands(
+        # Set timezone (required so TZ=Europe/Brussels works in Node.js)
+        "ln -sf /usr/share/zoneinfo/Europe/Brussels /etc/localtime",
+        "echo 'Europe/Brussels' > /etc/timezone",
         # Install Node.js 20 LTS via NodeSource
         "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -",
         "apt-get install -y nodejs",

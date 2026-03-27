@@ -13,7 +13,10 @@ const TOOLS = [
     description:
       "Consulte le calendrier DigiCitoyen et retourne les créneaux libres (lundi–vendredi, 9h–17h, durée 1h). " +
       "Appelle cet outil dès que l'utilisateur mentionne une date, demande des disponibilités, ou veut prendre rendez-vous. " +
-      "Ne pose pas de questions avant d'appeler l'outil.",
+      "Ne pose pas de questions avant d'appeler l'outil. " +
+      "Résultat : { creneaux_disponibles: [...], jours_complets: [...] }. " +
+      "IMPORTANT : jours_complets = jours ouvrables SANS aucun créneau libre (= complet, entièrement réservé). " +
+      "Ne PAS confondre avec 'complètement disponible'.",
     input_schema: {
       type: "object",
       properties: {
@@ -119,10 +122,18 @@ export async function chat(history, userMessage) {
           isError = true;
         }
 
+        // Rename keys before sending to Claude to avoid semantic confusion:
+        // "fullDays" sounds like "fully available days" — use explicit names instead
+        const contentForClaude = isError
+          ? result
+          : block.name === "get_available_slots"
+            ? { creneaux_disponibles: result.slots, jours_complets: result.fullDays }
+            : result;
+
         toolResults.push({
           type: "tool_result",
           tool_use_id: block.id,
-          content: JSON.stringify(result),
+          content: JSON.stringify(contentForClaude),
           ...(isError && { is_error: true }),
         });
       }
