@@ -14,8 +14,17 @@ await loadKnowledgeBase();
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+const allowedOrigins = [
+  process.env.FRONTEND_ORIGIN || "https://build-ai.be",
+  "http://localhost:5173",
+  "http://localhost:4173",
+];
 app.use(cors({
-  origin: process.env.FRONTEND_ORIGIN || "http://localhost:5173",
+  origin: (origin, cb) => {
+    // allow requests with no origin (curl, Postman, server-to-server)
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
 }));
 app.use(express.json({ limit: "50kb" }));
 
