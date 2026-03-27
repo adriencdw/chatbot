@@ -121,7 +121,7 @@ export async function queryFreebusy({ dateDebut, dateFin }) {
   }))));
   console.log("[queryFreebusy] free slots found:", slots.map(s => s.label));
 
-  return { slots, plages_occupees };
+  return { slots: slots.slice(0, 5), plages_occupees };
 }
 
 /**
@@ -131,16 +131,28 @@ export async function createCalendarEvent({ title, start, end, attendeeEmail, de
   const auth = getAuthClient();
   const calendar = google.calendar({ version: "v3", auth });
 
-  await calendar.events.insert({
+  const res = await calendar.events.insert({
     calendarId: process.env.CALENDAR_ID_MAIN,
+    conferenceDataVersion: 1,
     requestBody: {
       summary: title,
       description,
       start: { dateTime: start, timeZone: "Europe/Brussels" },
       end:   { dateTime: end,   timeZone: "Europe/Brussels" },
       attendees: [{ email: attendeeEmail }],
+      conferenceData: {
+        createRequest: {
+          requestId: `digicitoyen-${Date.now()}`,
+          conferenceSolutionKey: { type: "hangoutsMeet" },
+        },
+      },
     },
   });
+
+  const meetLink = res.data.conferenceData?.entryPoints
+    ?.find((e) => e.entryPointType === "video")?.uri ?? null;
+
+  return { meetLink };
 }
 
 function formatLabel(date) {

@@ -59,7 +59,12 @@ export async function sendManagerNotification({ token, name, email, reason, slot
   });
 }
 
-export async function sendUserConfirmation({ name, email, slotLabel, reason }) {
+export async function sendUserConfirmation({ name, email, slotLabel, reason, meetLink }) {
+  const meetRow = meetLink
+    ? `<tr><td style="padding:6px 0;color:#555;width:100px"><strong>Google Meet</strong></td>
+       <td><a href="${meetLink}" style="color:#2B5DB8">${meetLink}</a></td></tr>`
+    : "";
+
   await getTransporter().sendMail({
     from: `"DigiCitoyen ASBL" <${process.env.SMTP_USER}>`,
     to: email,
@@ -73,7 +78,9 @@ export async function sendUserConfirmation({ name, email, slotLabel, reason }) {
           <tr><td style="padding:6px 0;color:#555;width:100px"><strong>Quand</strong></td><td>${esc(slotLabel)}</td></tr>
           <tr><td style="padding:6px 0;color:#555"><strong>Motif</strong></td><td>${esc(reason) || "Non précisé"}</td></tr>
           <tr><td style="padding:6px 0;color:#555"><strong>Lieu</strong></td><td>Rue du Progrès 44, 1210 Saint-Josse-ten-Noode</td></tr>
+          ${meetRow}
         </table>
+        ${meetLink ? `<p><a href="${meetLink}" style="background:#2B5DB8;color:white;padding:10px 20px;text-decoration:none;border-radius:6px;font-weight:600;display:inline-block">Rejoindre Google Meet</a></p>` : ""}
         <p>En cas d'empêchement, merci de nous contacter au moins 48h à l'avance :<br>
         <a href="mailto:info@digicitoyen.be">info@digicitoyen.be</a> | +32 2 218 44 67</p>
         <p>À bientôt,<br><strong>L'équipe DigiCitoyen</strong></p>

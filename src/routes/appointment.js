@@ -69,7 +69,7 @@ router.get("/confirm/:token", async (req, res) => {
       return res.status(410).send(htmlPage("Lien invalide ou expiré", "Ce lien n'est plus valide (expiré après 24h ou déjà utilisé).", "#c0392b"));
     }
 
-    await createCalendarEvent({
+    const { meetLink } = await createCalendarEvent({
       title: `asbl-simple x ${appt.name}`,
       start: appt.slotStart,
       end: appt.slotEnd,
@@ -82,6 +82,7 @@ router.get("/confirm/:token", async (req, res) => {
       email: appt.email,
       slotLabel: appt.slotLabel,
       reason: appt.reason,
+      meetLink,
     });
 
     deleteAppointment(req.params.token);
