@@ -5,13 +5,16 @@
  */
 
 import { execSync } from "child_process";
-import { readdirSync } from "fs";
+import { readdirSync, readFileSync, existsSync } from "fs";
 import { join, basename, extname } from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 
-function parsePDF(filePath) {
-  return execSync(`pdftotext "${filePath}" -`, { encoding: "utf8" });
+function extractText(pdfPath) {
+  // A .txt file with the same basename takes priority — easy to update without regenerating the PDF
+  const txtPath = pdfPath.replace(/\.pdf$/i, ".txt");
+  if (existsSync(txtPath)) return readFileSync(txtPath, "utf8");
+  return execSync(`pdftotext "${pdfPath}" -`, { encoding: "utf8" });
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -27,7 +30,7 @@ export async function loadKnowledgeBase() {
 
   const loaded = files.map((file) => {
       try {
-        const text = parsePDF(join(PDF_DIR, file));
+        const text = extractText(join(PDF_DIR, file));
         const title = basename(file, ".pdf")
           .replace(/-/g, " ")
           .replace(/\b\w/g, (c) => c.toUpperCase());
