@@ -19,18 +19,24 @@ const BUSINESS_START = 9;
 const BUSINESS_END = 17;
 
 /**
- * Returns up to 3 available 1h slots across both calendars (next 7 working days).
+ * Returns up to 3 available 1h slots across both calendars.
+ * @param {object} options
+ * @param {number} options.offsetDays - start search this many days from now (default 0)
  */
-export async function getAvailableSlots() {
+export async function getAvailableSlots({ offsetDays = 0 } = {}) {
   const auth = getAuthClient();
   const calendar = google.calendar({ version: "v3", auth });
 
   const now = new Date();
-  const in8Days = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000);
+  const searchFrom = offsetDays > 0
+    ? new Date(now.getTime() + offsetDays * 24 * 60 * 60 * 1000)
+    : now;
+  const windowDays = offsetDays > 0 ? 14 : 8; // wider window when looking later
+  const in8Days = new Date(searchFrom.getTime() + windowDays * 24 * 60 * 60 * 1000);
 
   const freeBusyRes = await calendar.freebusy.query({
     requestBody: {
-      timeMin: now.toISOString(),
+      timeMin: searchFrom.toISOString(),
       timeMax: in8Days.toISOString(),
       timeZone: "Europe/Brussels",
       items: [
@@ -50,9 +56,10 @@ export async function getAvailableSlots() {
 
   // Generate candidate slots
   const candidates = [];
-  const cursor = new Date(now);
+  const cursor = new Date(searchFrom);
   cursor.setMinutes(0, 0, 0);
-  cursor.setHours(cursor.getHours() + 1);
+  if (offsetDays === 0) cursor.setHours(cursor.getHours() + 1); // skip current hour only for "now"
+  else cursor.setHours(BUSINESS_START, 0, 0, 0); // start at 9h when offsetting
 
   while (cursor < in8Days && candidates.length < 3) {
     const day = cursor.getDay(); // 0=Sun, 6=Sat
@@ -80,9 +87,8 @@ export async function getAvailableSlots() {
   // Detect fully booked working days (days with no free slot at all)
   const fullDays = [];
   const checkedDays = new Set();
-  // Start from tomorrow to avoid showing today as "complet"
-  const dayCursor = new Date(now);
-  dayCursor.setDate(dayCursor.getDate() + 1);
+  const dayCursor = new Date(searchFrom);
+  dayCursor.setDate(dayCursor.getDate() + (offsetDays === 0 ? 1 : 0)); // skip today only for "now"
   dayCursor.setHours(BUSINESS_START, 0, 0, 0);
 
   while (dayCursor < in8Days) {

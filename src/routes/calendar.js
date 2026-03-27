@@ -3,9 +3,10 @@ import { getAvailableSlots } from "../services/calendar.js";
 
 const router = express.Router();
 
-router.get("/", async (_, res) => {
+router.get("/", async (req, res) => {
   try {
-    const { slots, fullDays } = await getAvailableSlots();
+    const offsetDays = Math.min(Math.max(parseInt(req.query.offsetDays) || 0, 0), 60);
+    const { slots, fullDays } = await getAvailableSlots({ offsetDays });
     res.json({ slots, fullDays });
   } catch (err) {
     console.error("Calendar error:", err);
