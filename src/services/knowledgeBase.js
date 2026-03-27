@@ -4,7 +4,9 @@
  * No embeddings API needed. Add/remove PDFs without code changes.
  */
 
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
 import { readFileSync, readdirSync } from "fs";
 import { join, basename, extname } from "path";
 import { fileURLToPath } from "url";

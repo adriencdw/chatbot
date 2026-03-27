@@ -39,12 +39,23 @@ data_volume = modal.Volume.from_name("chatbot-data", create_if_missing=True)
 # Container image: Node 20 LTS + project files + production deps
 # .dockerignore excludes: node_modules, .env, data/, .git, .claude
 image = (
-    modal.Image.from_registry("node:20-slim")
-    .apt_install("python3")          # required by some native npm addons (node-gyp)
-    .copy_local_dir(".", "/app")     # respects .dockerignore
+    modal.Image.debian_slim()           # Modal-managed base with Python — required
+    .apt_install(                        # Node 20 LTS + build tools for native addons
+        "curl", "gnupg", "make", "g++",
+    )
+    .run_commands(
+        # Install Node.js 20 LTS via NodeSource
+        "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -",
+        "apt-get install -y nodejs",
+    )
+    .add_local_dir(
+        ".", "/app",
+        copy=True,
+        ignore=["node_modules", ".env", ".env.*", "data", ".git", ".claude", "*.log"],
+    )
     .run_commands(
         "cd /app && npm install --omit=dev",
-        "rm -rf /root/.npm",         # trim npm cache from image layer
+        "rm -rf /root/.npm",            # trim npm cache from image layer
     )
 )
 
@@ -53,11 +64,11 @@ image = (
     image=image,
     secrets=[modal.Secret.from_name("chatbot-secrets")],
     volumes={"/app/data": data_volume},
-    min_containers=1,              # keep 1 warm → avoids ~2 s PDF-parse cold-start
-    allow_concurrent_inputs=50,   # Express handles concurrency natively
-    timeout=30,                    # per-request timeout (seconds)
-    memory=512,                    # MB — PDFs + SQLite fit comfortably
+    min_containers=1,   # keep 1 warm → avoids ~2 s PDF-parse cold-start
+    timeout=30,         # per-request timeout (seconds)
+    memory=512,         # MB — PDFs + SQLite fit comfortably
 )
+@modal.concurrent(max_inputs=50)  # Express handles concurrency natively
 @modal.web_server(port=3001)
 def serve():
     """Starts the Express server inside the Modal container."""
