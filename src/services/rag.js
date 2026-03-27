@@ -54,6 +54,9 @@ async function executeTool(name, input) {
 const SYSTEM_PROMPT_TEMPLATE = `Tu es l'assistant virtuel de DigiCitoyen ASBL, une association bruxelloise d'inclusion numérique.
 Date d'aujourd'hui : {{TODAY}}
 
+Prochains jours ouvrables (référence exacte pour les dates ISO — ne calcule pas toi-même) :
+{{WORKING_DAYS}}
+
 Réponds toujours en français, de façon chaleureuse et accessible.
 Sois concis (3-5 phrases max par réponse sauf si on te demande des détails).
 N'utilise JAMAIS de markdown (pas de **, *, #, _, etc.). Texte brut uniquement.
@@ -78,12 +81,32 @@ FORMAT SPÉCIAL:
 - Pour indiquer un document pertinent, mentionne son titre entre [crochets] dans ta réponse.`;
 
 function buildSystemPrompt(userMessage) {
-  const today = new Date().toLocaleDateString("fr-BE", {
+  const now = new Date();
+
+  const today = now.toLocaleDateString("fr-BE", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
     timeZone: "Europe/Brussels",
   });
+
+  // Generate next 14 working days with their exact ISO date, so Claude never miscounts
+  const workingDays = [];
+  const cursor = new Date(now.toLocaleString("en-CA", { timeZone: "Europe/Brussels" }).slice(0, 10) + "T00:00:00");
+  while (workingDays.length < 14) {
+    cursor.setDate(cursor.getDate() + 1);
+    const dow = cursor.toLocaleDateString("en-US", { timeZone: "Europe/Brussels", weekday: "short" });
+    if (dow !== "Sat" && dow !== "Sun") {
+      const isoDate = cursor.toLocaleDateString("sv-SE", { timeZone: "Europe/Brussels" });
+      const label   = cursor.toLocaleDateString("fr-BE", {
+        weekday: "long", day: "numeric", month: "long", year: "numeric",
+        timeZone: "Europe/Brussels",
+      });
+      workingDays.push(`${label} → utilisez la date ISO ${isoDate} pour cet outil`);
+    }
+  }
+
   return SYSTEM_PROMPT_TEMPLATE
     .replace("{{TODAY}}", today)
+    .replace("{{WORKING_DAYS}}", workingDays.join("\n"))
     .replace("{{CONTEXT}}", buildContext(userMessage));
 }
 
