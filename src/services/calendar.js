@@ -19,25 +19,27 @@ const BUSINESS_START = 9;
 const BUSINESS_END = 17;
 
 /**
- * Returns up to 3 available 1h slots across both calendars.
+ * Queries Google Calendar freebusy for a given time range and returns:
+ * - slots: all free 1h slots within business hours (9-17, Mon-Fri)
+ * - plages_occupees: merged busy intervals (human-readable) for Claude to reason about
+ *
  * @param {object} options
- * @param {number} options.offsetDays - start search this many days from now (default 0)
+ * @param {string} options.dateDebut - ISO 8601 datetime in Brussels local time (e.g. "2026-03-31T09:00:00")
+ * @param {string} options.dateFin   - ISO 8601 datetime in Brussels local time
  */
-export async function getAvailableSlots({ offsetDays = 0 } = {}) {
+export async function queryFreebusy({ dateDebut, dateFin }) {
   const auth = getAuthClient();
   const calendar = google.calendar({ version: "v3", auth });
 
+  // new Date("2026-03-31T09:00:00") is parsed as local time when TZ=Europe/Brussels
+  const start = new Date(dateDebut);
+  const end = new Date(dateFin);
   const now = new Date();
-  const searchFrom = offsetDays > 0
-    ? new Date(now.getTime() + offsetDays * 24 * 60 * 60 * 1000)
-    : now;
-  const windowDays = offsetDays > 0 ? 14 : 8; // wider window when looking later
-  const in8Days = new Date(searchFrom.getTime() + windowDays * 24 * 60 * 60 * 1000);
 
   const freeBusyRes = await calendar.freebusy.query({
     requestBody: {
-      timeMin: searchFrom.toISOString(),
-      timeMax: in8Days.toISOString(),
+      timeMin: start.toISOString(),
+      timeMax: end.toISOString(),
       timeZone: "Europe/Brussels",
       items: [
         { id: process.env.CALENDAR_ID_MAIN },
@@ -47,36 +49,51 @@ export async function getAvailableSlots({ offsetDays = 0 } = {}) {
   });
 
   const calMain = freeBusyRes.data.calendars[process.env.CALENDAR_ID_MAIN];
-  const calSec = freeBusyRes.data.calendars[process.env.CALENDAR_ID_SECONDARY];
+  const calSec  = freeBusyRes.data.calendars[process.env.CALENDAR_ID_SECONDARY];
 
-  const busyIntervals = [
+  const rawBusy = [
     ...(calMain?.busy || []),
-    ...(calSec?.busy || []),
-  ].map((b) => ({ start: new Date(b.start), end: new Date(b.end) }));
+    ...(calSec?.busy  || []),
+  ]
+    .map((b) => ({ start: new Date(b.start), end: new Date(b.end) }))
+    .sort((a, b) => a.start - b.start);
 
-  // Generate candidate slots
-  const candidates = [];
-  const cursor = new Date(searchFrom);
-  cursor.setMinutes(0, 0, 0);
-  if (offsetDays === 0) cursor.setHours(cursor.getHours() + 1); // skip current hour only for "now"
-  else cursor.setHours(BUSINESS_START, 0, 0, 0); // start at 9h when offsetting
+  // Merge overlapping busy intervals
+  const busyMerged = [];
+  for (const b of rawBusy) {
+    const last = busyMerged[busyMerged.length - 1];
+    if (!last || b.start >= last.end) {
+      busyMerged.push({ start: new Date(b.start), end: new Date(b.end) });
+    } else {
+      last.end = new Date(Math.max(last.end, b.end));
+    }
+  }
 
-  while (cursor < in8Days && candidates.length < 3) {
-    const day = cursor.getDay(); // 0=Sun, 6=Sat
-    const hour = cursor.getHours();
+  // Compute all free 1h slots within business hours in the queried range
+  const slots = [];
+  const cursor = new Date(start);
+  cursor.setMinutes(0, 0, 0, 0);
 
-    if (day >= 1 && day <= 5 && hour >= BUSINESS_START && hour < BUSINESS_END) {
+  // If the range starts in the past, advance cursor to the next full hour after now
+  if (cursor <= now) {
+    cursor.setTime(now.getTime());
+    cursor.setMinutes(0, 0, 0, 0);
+    cursor.setHours(cursor.getHours() + 1);
+  }
+
+  while (cursor < end) {
+    const hour = cursor.getHours(); // Brussels local (TZ=Europe/Brussels)
+    const dow  = cursor.getDay();   // Brussels local
+
+    if (dow >= 1 && dow <= 5 && hour >= BUSINESS_START && hour < BUSINESS_END) {
       const slotStart = new Date(cursor);
-      const slotEnd = new Date(cursor.getTime() + SLOT_DURATION_MIN * 60 * 1000);
+      const slotEnd   = new Date(cursor.getTime() + SLOT_DURATION_MIN * 60 * 1000);
 
-      const isFree = !busyIntervals.some(
-        (b) => slotStart < b.end && slotEnd > b.start
-      );
-
+      const isFree = !busyMerged.some((b) => slotStart < b.end && slotEnd > b.start);
       if (isFree) {
-        candidates.push({
+        slots.push({
           start: slotStart.toISOString(),
-          end: slotEnd.toISOString(),
+          end:   slotEnd.toISOString(),
           label: formatLabel(slotStart),
         });
       }
@@ -84,41 +101,13 @@ export async function getAvailableSlots({ offsetDays = 0 } = {}) {
     cursor.setHours(cursor.getHours() + 1);
   }
 
-  // Detect fully booked working days (days with no free slot at all)
-  const fullDays = [];
-  const checkedDays = new Set();
-  const dayCursor = new Date(searchFrom);
-  dayCursor.setDate(dayCursor.getDate() + (offsetDays === 0 ? 1 : 0)); // skip today only for "now"
-  dayCursor.setHours(BUSINESS_START, 0, 0, 0);
+  // Human-readable busy intervals for Claude
+  const plages_occupees = busyMerged.map((b) => ({
+    debut: formatLabel(b.start),
+    fin:   formatLabel(b.end),
+  }));
 
-  while (dayCursor < in8Days) {
-    const day = dayCursor.getDay();
-    if (day >= 1 && day <= 5) {
-      const dateKey = dayCursor.toLocaleDateString("fr-BE", { timeZone: "Europe/Brussels" });
-      if (!checkedDays.has(dateKey)) {
-        // Check if this day has at least one free slot
-        let dayHasFreeSlot = false;
-        for (let h = BUSINESS_START; h < BUSINESS_END; h++) {
-          const s = new Date(dayCursor);
-          s.setHours(h, 0, 0, 0);
-          const e = new Date(s.getTime() + SLOT_DURATION_MIN * 60 * 1000);
-          if (s > now && !busyIntervals.some((b) => s < b.end && e > b.start)) {
-            dayHasFreeSlot = true;
-            break;
-          }
-        }
-        if (!dayHasFreeSlot) {
-          fullDays.push(dayCursor.toLocaleDateString("fr-BE", {
-            weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Brussels",
-          }));
-        }
-        checkedDays.add(dateKey);
-      }
-    }
-    dayCursor.setDate(dayCursor.getDate() + 1);
-  }
-
-  return { slots: candidates, fullDays };
+  return { slots, plages_occupees };
 }
 
 /**
@@ -134,7 +123,7 @@ export async function createCalendarEvent({ title, start, end, attendeeEmail, de
       summary: title,
       description,
       start: { dateTime: start, timeZone: "Europe/Brussels" },
-      end: { dateTime: end, timeZone: "Europe/Brussels" },
+      end:   { dateTime: end,   timeZone: "Europe/Brussels" },
       attendees: [{ email: attendeeEmail }],
     },
   });
@@ -143,10 +132,10 @@ export async function createCalendarEvent({ title, start, end, attendeeEmail, de
 function formatLabel(date) {
   return date.toLocaleString("fr-BE", {
     weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "2-digit",
-    minute: "2-digit",
+    day:     "numeric",
+    month:   "long",
+    hour:    "2-digit",
+    minute:  "2-digit",
     timeZone: "Europe/Brussels",
   });
 }
